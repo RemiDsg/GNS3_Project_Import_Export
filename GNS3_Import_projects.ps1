@@ -1,10 +1,10 @@
 ﻿<#
 
 .Synopsis
-   Permet la copie des fichiers d'un project de la vm gns3 vers le serveur local
+   Import des projets GNS3
 
 .DESCRIPTION
-   Permet la copie des fichiers d'un project de la vm gns3 vers le serveur local
+   Import des projets GNS3 avec les images,fichiers et machines virtuelles
 
 .EXAMPLE
    ./Nom du script
@@ -15,21 +15,29 @@
 .OUTPUTS
    
 .NOTES
-    NAME:    Backup GNS3
+    NAME:    Import projets GNS3
     AUTHOR:    Fabien Mauhourat
 
     VERSION HISTORY:
 
-    1.0     2017.09.12
-            Initial Version
+    1.0     2017.09.12   Fabien MAUHOURAT
 
 .FUNCTIONALITY
-   Backup gns3 file per project
+    Import des projets GNS3 :
+		- Import des fichiers du projet sur le serveur local
+		- Import des images du projet dans la VM GNS3 :
+			- QEMU
+			- IOS
+			- DOCKER
+			- IOU
+		- Import des machines virtuelles du projet
 
 #>
 
 # Fonction qui verifie les paramètres du script
 function verify-param {
+
+	# Vérifie si la vm GNS3 est joingnable et si les chemins existent
     if ( ! (ping $ip_vm_gns3 -n 2 | Select-String "TTL=") ) {
         affiche_error "La vm GNS3 $ip_vm_gns3 n est pas accessible !"
         pause ; exit
@@ -50,6 +58,8 @@ function verify-param {
         affiche_error "La variable gns3_proj_path_src n est pas definie !"
         pause ; exit
     }
+	
+	# Verifie si Putty est installé
 	if ( ! (Invoke-Command {& plink}) ) {
         affiche_error "Putty n'est pas installe sur le poste ou le chemin n est pas dans la variable PATH !"
         pause ; exit
@@ -58,6 +68,8 @@ function verify-param {
         affiche_error "Putty n'est pas installe sur le poste ou le chemin n est pas dans la variable PATH !"
         pause ; exit
     }
+	
+	# Vérifie si les variables sont nulles
     if ( $temp_path -eq "" ) {
         affiche_error "La variable temp_path n est pas definie !"
         pause ; exit
@@ -74,6 +86,8 @@ function verify-param {
         affiche_error "La variable gns3_images_path_vm n est pas definie !"
         pause ; exit
     }
+	
+	# Crée le repertoire de travail temporaire
 	New-Item -ItemType Directory -Force -Path "$temp_path\GNS3-TEMP" | Out-Null
     if ( $? -eq 0 ) {
         affiche_error "Creation du dossier GNS3-TEMP dans $temp_path echoue !"
@@ -81,6 +95,7 @@ function verify-param {
     }
     $script:temp_path="$temp_path\GNS3-TEMP"
 
+	# Affiche un recap de la configuration en cours
     Write-Host ""
     Write-Host "Verification des parametres terminee sans erreur !" -ForegroundColor Green
     Write-Host ""
@@ -101,10 +116,11 @@ function ssh_copie {
       [string]$dest
     )
 
+	# Commande scp avec Putty
     pscp.exe -pw $pass_gns3_vm -r "$source" "$user_gns3_vm@$($ip_vm_gns3):$dest" | Out-Null
 
     if ( $? -eq 0 ) {
-        affiche_error "Export de l image $images echoue !"
+        affiche_error "Import de l image $images echoue !"
         delete_temp
     }
 }
@@ -116,6 +132,7 @@ function ssh_command {
       [string]$command
     )
 
+	# Commande SSH avec Putty
     plink.exe -pw "$pass_gns3_vm" "$user_gns3_vm@$ip_vm_gns3" "$command" | Out-Null 
 
     if ( $? -eq 0 ) {
@@ -142,10 +159,11 @@ function delete_temp {
 }
 
 write-output "###########################################################################"
-write-output "################## Script d exportation des projets GNS3 ##################"
+write-output "################## Script d Importation des projets GNS3 ##################"
 write-output "###########################################################################"
 
 # Définition des variables
+# Le dossier d'installation de Putty doit etre dans la variable PATH
 $gns3_proj_path_local="C:\Users\fabien\GNS3\projects"
 $gns3_proj_path_src="C:\Users\fabien\Desktop"
 $ip_vm_gns3="192.168.146.128"
@@ -153,19 +171,22 @@ $gns3_images_path_vm="/opt/gns3/images"
 $pass_gns3_vm="gns3"
 $user_gns3_vm="gns3"
 $vmware_path_ovftool="C:\Program Files (x86)\VMware\VMware Workstation\OVFTool\ovftool.exe"
+
+# Le chemin absolue des VM doit etre séparé par des doubles "\\"
 $vmware_path_vm_folder="C:\\Users\\fabien\\Documents\\Virtual Machines"
 $temp_path="C:\Temp"
 
 # Vérification des paramètres
 verify-param
 
-# Choix du project GNS3 à exporter
+# Choix du project GNS3 à Importer
 
 Write-Host "Liste des projects GNS3 a importer :" -ForegroundColor Green
 Write-Host ""
 
 # Liste les projets GNS3 du repertoire gns3_proj_path_local
 $compteur=0
+# Affichage de tous les fichiers qui sont au format ZIP
 Get-ChildItem $gns3_proj_path_src | select Name | foreach { 
     if ((Test-Path "$gns3_proj_path_src\$($_.name)") -and ("$($_.name)" -match ".zip")) {
         $compteur=$compteur+1
@@ -177,7 +198,7 @@ Write-Host ""
 $num_project=$(Read-Host "Quel project ")
 Write-Host ""
 
-# Récuperation du nom du projet
+# Récuperation du nom du projet en fonction du numero du projet selectionné
 $compteur=0
 Get-ChildItem $gns3_proj_path_src | foreach { 
     if ((Test-Path "$gns3_proj_path_src\$($_.name)") -and ("$($_.name)" -match ".zip")) {
@@ -207,22 +228,29 @@ Write-Host "Decompression de $nom_project reussi dans $temp_path\$nom_project !"
 
 $images_path_folder=Get-ChildItem $temp_path\$nom_project\images
 
+# Creation des dossiers des images sur la VM GNS3
 foreach ($folder_name in "QEMU","IOU","IOS") {
     ssh_command "mkdir -p $gns3_images_path_vm/$folder_name"
 }
 
+# Copie de toutes les images du projet dans la VM GNS3
 foreach ($folder in $images_path_folder.Name) {
 
+	# Sidossier d'image vide passage au dossier suivant
     $images_local=Get-ChildItem $temp_path\$nom_project\images\$folder
     if ( "$images_local" -eq "" ) {
         continue
     }
 
+	# Pour les images docker
     if ( "$folder" -eq "docker" ) {
         foreach ($images_docker in $images_local) {
 
+			# Récuperation du chemin de l'image
             $images_ref_path=$images_docker.PSPath | ForEach-Object {$_.split('::')[2] + ":" + $_.split('::')[3]}
             $images_ref_name=$images_docker.name 
+			
+			# Copie et importation de l'image sur la VM
             ssh_copie "$images_ref_path" "/tmp/$images_ref_name"
             ssh_command "docker load < /tmp/$images_ref_name"
 
@@ -235,9 +263,11 @@ foreach ($folder in $images_path_folder.Name) {
 
     $images_vm=ssh_command "ls $gns3_images_path_vm/$folder" | where {$_ -notmatch "md5sum"}
 
+	# Pour le reste des images IOS,IOU,QEMU
     ForEach ($images_ref in $images_local.Name) {
         $test_images=0
 
+		# Vérifie si l'image est déjà présente sur la vm GNS3
         ForEach ($images_dest in $images_vm) {
 
             if ("$images_ref" -like "$images_dest") {
@@ -248,8 +278,10 @@ foreach ($folder in $images_path_folder.Name) {
 
         if ($test_images -ne 1) {
             
+			# Récuperation du chemin de l'image
             $images_ref_path=$images_local.PSPath | where {$_ -match "$images_ref"} | ForEach-Object {$_.split('::')[2] + ":" + $_.split('::')[3]}
 
+			# Copue de l'image sur la VM GNS3 dans le bon dossier
             ssh_copie "$images_ref_path" "$gns3_images_path_vm/$folder"
             ssh_command "chmod a+x $gns3_images_path_vm/$folder/$images_ref"
 
@@ -271,14 +303,17 @@ $vm_path_temp=Get-ChildItem $temp_path -Recurse | where {$_ -match ".ovf$"}
 
 if ("$vm_path_temp" -ne "") {
 
+	# Récuperation du chemin des VMs du projet
     $vm_path=$vm_path_temp.PSPath | ForEach-Object {$_.split('::')[2] + ":" + $_.split('::')[3]}
     
+	# Importation de toutes les VMs du projet dans le repertoire local des VMs
     foreach ($vm in $vm_path) {
 
         Write-Host ""
         Write-Host "Import de la VM $vm en cours !" -ForegroundColor Green
         Write-Host ""
 
+		# Command d'import de la VM
         Invoke-Command {& $vmware_path_ovftool --lax --allowExtraConfig "$vm" "$vmware_path_vm_folder"}
 
         if ( $? -eq 0 ) {
@@ -291,7 +326,7 @@ if ("$vm_path_temp" -ne "") {
     Write-Host "Import des vm dans $vmware_path_vm_folder terminee avec succes !" -ForegroundColor Green
     Write-Host ""
 
-    # Backup du fichier GNS3
+    # Backup du fichier du fichier de configuration du projet GNS3
 
     Copy-Item -Force -Path "$temp_path\$nom_project\$nom_project.gns3" -Destination "$temp_path\$nom_project\$nom_project.gns3.back"
 
@@ -300,7 +335,7 @@ if ("$vm_path_temp" -ne "") {
             delete_temp
     }
 
-    # Extrait le chemin des vm à changer
+    # Extrait le chemin des vm à changer dans fichier de configuration du projet
 
     $vm_path_temp=Get-ChildItem $temp_path
 
@@ -309,6 +344,7 @@ if ("$vm_path_temp" -ne "") {
     foreach ($vm_name in $vm_path_temp.Name) {
 
         if ("$vm_path_gns3" -match "$vm_name") {
+			# Récuperation de l'ancien chemin des VMs en isolant la premiere partie du chemin
             $old_vm_path=$vm_path_gns3.replace("$vm_name\\$vm_name.vmx",'')
             break
         }
@@ -317,14 +353,13 @@ if ("$vm_path_temp" -ne "") {
     # Changement du repertoire des vm dans le fichier GNS3 du projet
 
     $new_gns3_content=Get-Content "$temp_path\$nom_project\$nom_project.gns3.back" | ForEach-Object {$_.replace("$old_vm_path","$vmware_path_vm_folder\\")}
-    # Out-File "$temp_path\$nom_project\$nom_project.gns3" utf8
 
     if ( $? -eq 0 ) {
         affiche_error "Changement du repertoire de la VM $vm_path_projet echoue !"
         delete_temp
     }
 
-    #$Utf8NoBomEncoding = New-Object System.Text.UTF8Encoding $False
+	# Creation du nouveau fichier de configuration de GNS3 avec le nouveau chemin des VMs
     [System.IO.File]::WriteAllLines("$temp_path\$nom_project\$nom_project.gns3", "$new_gns3_content")
 
     Write-Host ""
@@ -333,7 +368,7 @@ if ("$vm_path_temp" -ne "") {
 
 }
 
-# Copie du project dans le répertoire de gns3
+# Copie du project dans le répertoire local des projets de gns3
 
 Copy-Item -Recurse -Force -Exclude images "$temp_path\$nom_project" "$gns3_proj_path_local\$nom_project"
 

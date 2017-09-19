@@ -35,6 +35,8 @@
 
 # Fonction qui verifie les paramètres du script
 function verify-param {
+
+	# Vérifie si la vm GNS3 est joingnable et si les chemins existent
     if ( ! (ping $ip_vm_gns3 -n 2 | Select-String "TTL=") ) {
         affiche_error "La vm GNS3 $ip_vm_gns3 n est pas accessible !"
         pause ; exit
@@ -55,6 +57,8 @@ function verify-param {
         affiche_error "La variable export_project_path n est pas definie !"
         pause ; exit
     }
+	
+	# Verifie si Putty est installé
 	if ( ! (Invoke-Command {& plink}) ) {
         affiche_error "Putty n'est pas installe sur le poste ou le chemin n est pas dans la variable PATH !"
         pause ; exit
@@ -63,6 +67,8 @@ function verify-param {
         affiche_error "Putty n'est pas installe sur le poste ou le chemin n est pas dans la variable PATH !"
         pause ; exit
     }
+	
+	# Vérifie si les variables sont nulles
     if ( $temp_path -eq "" ) {
         affiche_error "La variable temp_path n est pas definie !"
         pause ; exit
@@ -79,6 +85,8 @@ function verify-param {
         affiche_error "La variable gns3_proj_path_vm n est pas definie !"
         pause ; exit
     }
+	
+	# Crée le repertoire de travail temporaire
 	New-Item -ItemType Directory -Force -Path "$temp_path\GNS3-TEMP" | Out-Null
     if ( $? -eq 0 ) {
         affiche_error "Creation du dossier GNS3-TEMP dans $temp_path echoue !"
@@ -86,6 +94,7 @@ function verify-param {
     }
     $script:temp_path="$temp_path\GNS3-TEMP"
 
+	# Affiche un recap de la configuration en cours
     Write-Host ""
     Write-Host "Verification des parametres terminee sans erreur !" -ForegroundColor Green
     Write-Host ""
@@ -97,7 +106,7 @@ function verify-param {
     Write-Host ""
 }
 
-# Fonction qui copie les images du project
+# Fonction qui copie les images du project du repertoire ou elles sont stockées vers le repertoire temporaire
 function copie-images {
 
     Param(
@@ -118,7 +127,7 @@ function copie-images {
     Write-Host ""
 }
 
-# Fonction qui verifie si l image existe deja
+# Fonction qui verifie si l image existe dans le repertoire temporaire
 function verify_images {
 
     Param(
@@ -137,6 +146,7 @@ function find_images {
       [string]$images_name
     )
 
+	# Recherche l'image en cours dans le dossier elles sont stockées
     $images_path_temp=Get-ChildItem -Path "$gns3_images_path_local" -Recurse | where {$_ -match "^$($images_name)$"}
 
     if ( "$images_path_temp" -eq ""  ) {
@@ -144,18 +154,20 @@ function find_images {
         delete_temp
     }
 
+	# Selection du chemin du chemin de l'image
     $images_path=$images_path_temp.PSPath | % {$_.split('::')[2] + ":" + $_.split('::')[3]}
 
     return $images_path
 }
 
-# Fonction qui execute une commande ssh
+# Fonction qui execute une commande ssh sur la VM GNS3
 function ssh_command {
 
     Param(
       [string]$command
     )
 
+	# Commande SSH avec Putty
     plink.exe -pw "$pass_gns3_vm" "$user_gns3_vm@$ip_vm_gns3" "$command" | Out-Null 
 
     if ( $? -eq 0 ) {
@@ -164,7 +176,7 @@ function ssh_command {
     }
 }
 
-# Fonction qui copie des fichiers en ssh
+# Fonction qui copie des fichiers en ssh de la VM GNS3 vers le repertoire temporaire
 function ssh_copie {
 
     Param(
@@ -172,6 +184,7 @@ function ssh_copie {
       [string]$dest
     )
 
+	# Commande scp avec Putty
     pscp.exe -pw "$pass_gns3_vm" -r "$user_gns3_vm@$($ip_vm_gns3):$source" "$dest" | Out-Null
 
     if ( $? -eq 0 ) {
@@ -202,6 +215,7 @@ write-output "################## Script d exportation des projets GNS3 #########
 write-output "###########################################################################"
 
 # Définition des variables
+# Le dossier d'installation de Putty doit etre dans la variable PATH
 $gns3_proj_path_local="D:\Soft\GNS3\projects"
 $gns3_images_path_local="D:\Soft\GNS3\images"
 $ip_vm_gns3="192.168.0.50"
@@ -222,10 +236,11 @@ Write-Host ""
 
 # Liste les projets GNS3 du repertoire gns3_proj_path_local
 $compteur=0
+# Affichage de tous les dossiers contenant un fichier de configuration GNS3
 Get-ChildItem $gns3_proj_path_local | select Name | foreach { 
     if (Test-Path "$gns3_proj_path_local\$($_.name)\$($_.name).gns3") {
         $compteur=$compteur+1
-        Write-Host "$compteur." $_.name`
+        Write-Host "$compteur." $_.name
     }
 }
 
@@ -233,7 +248,7 @@ Write-Host ""
 $num_project=$(Read-Host "Quel project ")
 Write-Host ""
 
-# Récuperation du nom du projet
+# Récuperation du nom du projet en fonction du numero du projet selectionné
 $compteur=0
 Get-ChildItem $gns3_proj_path_local | foreach { 
     if (Test-Path "$gns3_proj_path_local\$($_.name)\$($_.name).gns3") {
@@ -247,12 +262,13 @@ Get-ChildItem $gns3_proj_path_local | foreach {
 
 Write-Host "Projet $nom_project selectionne !" -ForegroundColor Green
 
-# Recuperation de l'ID du project et le chemin du vmx des vm du project
-
+# Recuperation du contenu au format JSON du fichier de configuration du projet GNS3
 $project_file=Get-Content "$gns3_proj_path_local\$nom_project\$nom_project.gns3" | ConvertFrom-Json
 
+# Selection des noeuds qui correspondent à des VM VMWARE
 $vm_project=$($project_file.topology.nodes) | where {$_.node_type -match "vmware"}
 
+# Selection des noeuds
 $image_project=$($project_file.topology.nodes)
 
 Write-Host "      *  L ID du projet : $($project_file.project_id)"
@@ -269,23 +285,24 @@ if ( $? -eq 0 ) {
 Write-Host ""
 Write-Host "Copie du projet $nom_project reussi dans $temp_path\$nom_project !" -ForegroundColor Green
 
-# Récuperation des données du project de la vm gns3
-
+# Vérification de l'existance du projet sur la VM
 ssh_command "cd $gns3_proj_path_vm/$($project_file.project_id)" 
 
+# Récuperation des données du project de la vm gns3
 ssh_copie "$gns3_proj_path_vm/$($project_file.project_id)/project-files" "$temp_path\$nom_project"
 
 Write-Host ""
 Write-Host "Copie des fichiers du project $nom_project reussi dans $temp_path\$nom_project\project-files !" -ForegroundColor Green
 
 # Creation de l'arborescence pour stocker les images dans le project
-
+# Création du dossier images du projet
 New-Item -ItemType Directory -Force -Path $temp_path\$nom_project\images | out-null
 
 if ( $? -eq 0 ) {
     affiche_error "Creation du repertoire $temp_path\$nom_project\images echoue !"
     delete_temp
 }
+# Création des dossiers correspondant à chaque type d'images
 foreach ($nodes in "QEMU","IOU","IOS","docker") {
 
     New-Item -ItemType Directory -Force -Path $temp_path\$nom_project\images\$nodes | out-null
@@ -303,12 +320,14 @@ foreach ($images in $image_project) {
     # Export des images QEMU dans le repertoire temporaire du projet
     if ($($images.node_type) -match "qemu") {
 
+		# Export de chaque disque dur de la VM QEMU
         foreach ($lettre in "a","b","c","d") {
 
             $image_file_name="$($images.properties | select -ExpandProperty hd$($lettre)_disk_image)"
             
             if ( ! ("$image_file_name" -eq "") ) {
-
+				
+				# Vérifie si le dique dur à déjà été copié
                 if ( $(verify_images "$image_file_name" "QEMU") ) {continue}
                 $images_path_local=find_images "$image_file_name"
                 copie-images "$images_path_local" "QEMU" "$image_file_name"
@@ -322,8 +341,11 @@ foreach ($images in $image_project) {
     # Export des images IOU dans le repertoire temporaire du projet
     elseif ($($images.node_type) -match "iou") {
         
+		# Vérifie si l'image à déjà été copié
         $image_file_name="$($images.properties.path)"
         if ( $(verify_images "$image_file_name" "IOU") ) {continue}
+		
+		# Copie l'image IOU dans le dossier temporaire
         $images_path_local=find_images "$image_file_name"
         copie-images "$images_path_local" "IOU" "$image_file_name"
         continue
@@ -332,6 +354,7 @@ foreach ($images in $image_project) {
     # Export des images DOCKER dans le repertoire temporaire du projet
     elseif ($($images.node_type) -match "docker") {
 
+		# Suppression des caractères "/" et ":" dans le nom des images docker
         if ($($images.properties.image) -match "/") {
             $container_name=$($images.properties.image).split('/')[1]
         } else {
@@ -341,7 +364,11 @@ foreach ($images in $image_project) {
             $container_name=$container_name.split(':')[0]
         }
         Write-Host $container_name
+		
+		# Vérifie si l'image à déjà été copié
         if ( $(verify_images "$container_name" "docker") ) {continue}
+		
+		# Export l'image docker dans le dossier temporaire
         ssh_command "docker save $($images.properties.image) > /tmp/$container_name.tar"
         ssh_copie "/tmp/$container_name.tar" "$temp_path\$nom_project\images\docker\$container_name.tar"
         continue
@@ -350,8 +377,11 @@ foreach ($images in $image_project) {
     # Export des images IOS dans le repertoire temporaire du projet
     elseif ($($images.node_type) -match "dynamips") {
         
+		# Vérifie si l'image à déjà été copié
         $image_file_name="$($images.properties.image)"
         if ( $(verify_images "$image_file_name" "IOS") ) {continue}
+		
+		# Copie l'image IOU dans le dossier temporaire
         $images_path_local=find_images "$image_file_name"
         copie-images "$images_path_local" "IOS" "$image_file_name"
         continue
@@ -371,6 +401,7 @@ foreach ($vm in $($vm_project.properties.vmx_path)) {
     Write-Host "Export de la VM $vm en cours !" -ForegroundColor Green
     Write-Host ""
 
+	# Export des VMs dans le dossier temporaire du script
     Invoke-Command {& $vmware_path_ovftool $vm $temp_path}
 
     if ( $? -eq 0 ) {
