@@ -15,10 +15,10 @@ Export des projets GNS3 :
         - IOS [x]
         - DOCKER [x]
         - IOU [x]
-		- Cloud [x]
-		- NAT [x]
-		- VM Vmware [x]
-		- VM Vbox []
+	- Cloud [x]
+	- NAT [x]
+	- VM Vmware [x]
+	- VM Vbox []
 
 > Il faut modifier les variables du script en faisant correspondre les bons chemins
 		
