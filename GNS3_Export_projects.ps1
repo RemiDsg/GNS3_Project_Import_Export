@@ -8,6 +8,7 @@
 
 .EXAMPLE
    ./Nom du script
+   ./Nom du script -ProjectPath "chemin" -ImagesPath "chemin" -IPGns3vm "IP" -VboxVmPath "chemin" -ExportPath "chemin"
 
 .INPUTS
    Pas d'entrée en pipe possible
@@ -33,6 +34,40 @@
         - Export des machines virtuelles du projet
 #>
 
+# Définition des variables
+# Le dossier d'installation de Putty doit etre dans la variable PATH
+
+[cmdletbinding()]
+param (
+    [Parameter(Mandatory=$false, Position=1)]
+    [Alias("ProjectPath")]
+    [string]$gns3_proj_path_local="D:\Soft\GNS3\projects",
+
+    [Parameter(Mandatory=$false, Position=2)]
+    [Alias("ImagesPath")]
+    [string]$gns3_images_path_local="D:\Soft\GNS3\images",
+
+    [Parameter(Mandatory=$false, Position=3)]
+    [Alias("IPGns3vm")]
+    [string]$ip_vm_gns3="192.168.0.50",
+
+    [string]$gns3_proj_path_vm="/opt/gns3/projects",
+
+    [string]$pass_gns3_vm="gns3",
+
+    [string]$user_gns3_vm="gns3",
+
+    [string]$vmware_path_ovftool="C:\Program Files (x86)\VMware\VMware Workstation\OVFTool\ovftool.exe",
+
+    [string]$vbox_path_ovftool="C:\Program Files\Oracle\VirtualBox\VBoxManage.exe",
+
+    [string]$temp_path="C:\Temp",
+
+    [Parameter(Mandatory=$false, Position=4)]
+    [Alias("ExportPath")]
+    [string]$export_project_path="C:\Temp"
+)
+
 # Fonction qui verifie les paramètres du script
 function verify-param {
 
@@ -51,6 +86,10 @@ function verify-param {
     }
     if ( $vmware_path_ovftool -eq "" -or ! (Test-Path $vmware_path_ovftool) ) {
         affiche_error "La variable vmware_path_ovftool n est pas definie !"
+        pause ; exit
+    }
+	if ( $vbox_path_ovftool -eq "" -or ! (Test-Path $vbox_path_ovftool) ) {
+        affiche_error "La variable vbox_path_ovftool n est pas definie !"
         pause ; exit
     }
     if ( $export_project_path -eq "" -or ! (Test-Path $export_project_path) ) {
@@ -214,18 +253,6 @@ write-output "##################################################################
 write-output "################## Script d exportation des projets GNS3 ##################"
 write-output "###########################################################################"
 
-# Définition des variables
-# Le dossier d'installation de Putty doit etre dans la variable PATH
-$gns3_proj_path_local="D:\Soft\GNS3\projects"
-$gns3_images_path_local="D:\Soft\GNS3\images"
-$ip_vm_gns3="192.168.0.50"
-$gns3_proj_path_vm="/opt/gns3/projects"
-$pass_gns3_vm="gns3"
-$user_gns3_vm="gns3"
-$vmware_path_ovftool="C:\Program Files (x86)\VMware\VMware Workstation\OVFTool\ovftool.exe"
-$temp_path="D:\Temp"
-$export_project_path="D:\Temp"
-
 # Vérification des paramètres
 verify-param
 
@@ -266,10 +293,10 @@ Write-Host "Projet $nom_project selectionne !" -ForegroundColor Green
 $project_file=Get-Content "$gns3_proj_path_local\$nom_project\$nom_project.gns3" | ConvertFrom-Json
 
 # Selection des noeuds qui correspondent à des VM VMWARE
-$vm_project=$($project_file.topology.nodes) | where {$_.node_type -match "vmware"}
+$vm_project=$($project_file.topology.nodes) | where {$_.node_type -match "vmware" -or $_.node_type -match "virtualbox"}
 
 # Selection des noeuds
-$image_project=$($project_file.topology.nodes)
+$image_project=$($project_file.topology.nodes) | where {$_.node_type -notmatch "vmware" -or $_.node_type -notmatch "virtualbox"}
 
 Write-Host "      *  L ID du projet : $($project_file.project_id)"
 
@@ -363,14 +390,15 @@ foreach ($images in $image_project) {
         if ($($images.properties.image) -match ":") {
             $container_name=$container_name.split(':')[0]
         }
-        Write-Host $container_name
-		
+        		
 		# Vérifie si l'image à déjà été copié
         if ( $(verify_images "$container_name" "docker") ) {continue}
 		
 		# Export l'image docker dans le dossier temporaire
         ssh_command "docker save $($images.properties.image) > /tmp/$container_name.tar"
         ssh_copie "/tmp/$container_name.tar" "$temp_path\$nom_project\images\docker\$container_name.tar"
+
+        Write-Host "Copie du container $container_name terminee avec succes !"
         continue
     }
 
@@ -395,17 +423,34 @@ Write-Host ""
 
 # Export des vms du project en ovf
 
-foreach ($vm in $($vm_project.properties.vmx_path)) {
+foreach ($vm in $($vm_project)) {
 
     Write-Host ""
-    Write-Host "Export de la VM $vm en cours !" -ForegroundColor Green
+    Write-Host "Export de la VM $($vm.name) en cours !" -ForegroundColor Green
     Write-Host ""
 
-	# Export des VMs dans le dossier temporaire du script
-    Invoke-Command {& $vmware_path_ovftool $vm $temp_path}
+	# Export des vm vmware dans le repertoire temporaire
+    if ($($vm.node_type) -match "vmware") {
+	
+		# Export des VMs dans le dossier temporaire du script
+		Invoke-Command {& $($vmware_path_ovftool) "$($vm.properties.vmx_path)" "$temp_path"}
+	
+	}
 
+	# Export des vm vbox dans le repertoire temporaire
+	elseif ($($vm.node_type) -match "virtualbox") {
+	
+		$vm_path_source="$($vm.properties.vmname)"
+		$vm_path_dest="$temp_path\$($vm.properties.vmname)\$($vm.properties.vmname).ovf"
+		New-Item -ItemType Directory -Force -Path "$temp_path\$($vm.properties.vmname)" | Out-Null
+
+		# Export des VMs dans le dossier temporaire du script
+		Invoke-Command {& $($vbox_path_ovftool) export "$vm_path_source" -o "$vm_path_dest"}
+	
+	}
+	
     if ( $? -eq 0 ) {
-        affiche_error "Export de la VM $vm echoue !"
+        affiche_error "Export de la VM $($vm.name) echoue !"
         delete_temp
     }
 }
@@ -416,15 +461,31 @@ Write-Host ""
 
 # Compression du project
 
-Compress-Archive -Force -CompressionLevel Optimal -Path "$temp_path\*" -DestinationPath "$export_project_path\$nom_project"
+Write-Host ""
+Write-Host "Compression de $nom_project en cours !" -ForegroundColor Green
+
+if ((Get-Host | select -ExpandProperty Version | select -ExpandProperty major) -eq 5){
+
+    # Cmdlet pour powershell 5
+    Compress-Archive -Force -CompressionLevel Optimal -Path "$temp_path\*" -DestinationPath "$export_project_path\$nom_project"
+
+} else {
+
+    # Creation du zip pour les autres versions de powershell
+    if (Test-Path "$export_project_path\$nom_project.zip") {
+        Remove-Item -Path "$export_project_path\$nom_project.zip"
+    }
+    Add-Type -Assembly System.IO.Compression.FileSystem
+    [System.IO.Compression.ZipFile]::CreateFromDirectory("$temp_path\", "$export_project_path\$nom_project.zip", "Optimal", $flase)
+}
 
 if ( $? -eq 0 ) {
-    affiche_error "Compression du projet $nom_project echoue !"
-    delete_temp
+        affiche_error "Compression du projet $nom_project echoue !"
+        delete_temp
 }
 
 Write-Host ""
-Write-Host "Compression du $nom_project reussi dans $export_project_path\$nom_project !" -ForegroundColor Green
+Write-Host "Compression de $nom_project reussi dans $export_project_path\$nom_project !" -ForegroundColor Green
 
 Write-Host ""
 Write-Host "Script termine avec succes !" -ForegroundColor Green

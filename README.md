@@ -2,8 +2,8 @@
 Scripts d'import et d'export de projets sous GNS3.
 Le script requiert :
 
-	- Windows 10 
-	- Hyperviseur Vmware Workstation
+	- Windows 10,8.1,7
+	- Hyperviseur Vmware Workstation et VirtualBox
 	- Putty
 
 ## Fonctionnalités du script d'export et d'import
@@ -21,7 +21,7 @@ Export des projets GNS3 :
     	- Cloud [x]
     	- NAT [x]
     	- VM Vmware [x]
-    	- VM Vbox []
+    	- VM Vbox [X]
 
 > Il faut modifier les variables du script en faisant correspondre les bons chemins
 		
