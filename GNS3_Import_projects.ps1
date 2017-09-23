@@ -235,6 +235,29 @@ function delete_temp {
 
 }
 
+# Fonction qui calcul l'espace disque disponible en Go 
+function espace_disk{
+	$elements = get-WmiObject Win32_LogicalDisk
+
+	$taille_totale = 0 # initialisation de la variable
+	
+	# boucle pour parcourir tous les disques
+	foreach ( $disque in $elements ) { 
+ 	   # calul de la taille en Giga octet
+ 	   $taille = $disque.freespace / (1024*1024*1024)
+	   $taille = [math]::round($taille, 1) # Arrondi la taille à 1 
+
+ 	   $nom=$disque.Name
+	   #On selectionne le disque "C:"
+	   $Name = "C:"
+	   $taille_totale = $taille_totale + $taille
+	   #On affiche l'espace disque disponible 
+ 		  if ($nom -eq $Name){
+		  write-host "Le disque $nom a $taille Go de disponible"
+  		  }
+	}
+}
+
 write-output "###########################################################################"
 write-output "################## Script d Importation des projets GNS3 ##################"
 write-output "###########################################################################"
